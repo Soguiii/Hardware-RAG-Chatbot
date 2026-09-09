@@ -18,7 +18,6 @@ st.set_page_config(
 
 # --- Header Section ---
 st.title("🛠️ Enterprise IT Hardware Support")
-st.markdown("**Domain-Specific RAG Chatbot | ITCC508 Lab Project**")
 
 # Information Expander
 with st.expander("ℹ️ About this Intelligent Assistant", expanded=True):
@@ -120,11 +119,6 @@ with st.sidebar:
     st.markdown("- **Vector Database:** `ChromaDB`")
     st.markdown("- **Chunking Strategy:** 700 chars / 70 overlap")
     
-    st.markdown("---")
-    st.markdown("### 👨‍💻 Developer Info")
-    st.markdown("**Developer:** Soji")
-    st.markdown("**Project:** ITCC508 Lab PT-M1")
-    st.markdown("**Course:** Intro to LLMOps and RAG Concepts")
 
 # --- Main Chat Interface ---
 if api_key_input:
