@@ -18,21 +18,16 @@ st.set_page_config(
 
 # --- Header Section ---
 st.title("🛠️ Enterprise IT Hardware Support")
+st.markdown("**Domain-Specific RAG Chatbot | ITCC508 Lab Project**")
 
-# Information Expander
-with st.expander("ℹ️ About this Intelligent Assistant", expanded=True):
+with st.expander("ℹ️ About this Intelligent Assistant & Experimental Modes", expanded=False):
     st.markdown("""
-    Welcome to the **IT Hardware Helpdesk**. This Retrieval-Augmented Generation (RAG) assistant helps technicians instantly locate exact technical specifications, diagnostic LED/beep codes, and component replacement procedures without manually sifting through hundreds of pages.
+    Welcome to the **IT Hardware Helpdesk**. This Retrieval-Augmented Generation (RAG) assistant helps technicians instantly locate technical specifications, diagnostic codes, and repair procedures.
     
-    **📚 Currently Supported Hardware Data:**
-    - 🖥️ **Dell OptiPlex 7080 SFF** (Official Service Manual)
-    - 💻 **HP All-in-One Desktop** (Hardware Reference Guide)
-    - 🖧 **HP EliteDesk 805 G6 SFF** (Maintenance & Service Guide)
-    
-    💡 **Example Queries to Try:**
-    - *"What does a blinking amber power LED mean on the Dell OptiPlex?"*
-    - *"How do I clear the CMOS or reset the BIOS?"*
-    - *"What are the exact steps to replace an M.2 NVMe SSD?"*
+    **🧪 Experimental Modes (Use the Sidebar Sidebar to test):**
+    - **🟢 Strictly Grounded:** The standard RAG pipeline. It has `temperature=0` and a strict prompt. It will safely say "I cannot answer..." if you ask an off-topic question (Fallback Test).
+    - **🔴 Hallucination Stress-Test:** Bypasses safety guardrails (`temperature=1.0` and no strict prompt). Try asking it for a sourdough recipe to see it hallucinate!
+    - **🟡 Baseline LLM:** Completely ignores the PDF manuals and acts like a standard ChatGPT, relying only on its pre-trained knowledge.
     """)
 
 st.markdown("---")
@@ -51,7 +46,6 @@ def init_rag_pipeline(api_key):
     # 1. Load Data
     loader = DirectoryLoader(".", glob="**/*.pdf", loader_cls=PyPDFLoader, show_progress=False)
     raw_documents = loader.load()
-    
     if not raw_documents:
         return None, "No PDF manuals found. Please place your PDFs in this directory."
         
@@ -64,96 +58,131 @@ def init_rag_pipeline(api_key):
     vectorstore = Chroma.from_documents(documents=documents, embedding=embeddings)
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
     
-    # 4. LLM & Prompt
-    llm = ChatGroq(model_name="openai/gpt-oss-20b", temperature=0)
-    system_prompt = (
-        "You are a specialized enterprise IT hardware support assistant.\n"
-        "Answer questions strictly using ONLY the provided hardware manual context below.\n"
-        "If the answer cannot be found in the context, reply: 'I cannot answer based on the provided domain data.'\n"
-        "Provide your answers in a clean, professional, and easy-to-read format (use bullet points for steps).\n\n"
-        "Context:\n{context}"
-    )
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{input}"),
+    # 4. LLMs (Safe and Unsafe versions for experiments)
+    llm_safe = ChatGroq(model_name="openai/gpt-oss-20b", temperature=0)
+    llm_unsafe = ChatGroq(model_name="openai/gpt-oss-20b", temperature=1.0)
+    
+    # 5. Prompts for different modes
+    prompt_grounded = ChatPromptTemplate.from_messages([
+        ("system", "You are a specialized enterprise IT hardware support assistant.\nAnswer questions strictly using ONLY the provided hardware manual context below.\nIf the answer cannot be found in the context, reply: 'I cannot answer based on the provided domain data.'\nProvide your answers in a clean, professional, and easy-to-read format.\n\nContext:\n{context}"),
+        ("human", "{input}")
     ])
     
-    # 5. Pipeline Assembly
+    prompt_hallucinate = ChatPromptTemplate.from_messages([
+        ("system", "You are a highly creative and confident assistant. Answer the user's question using your own general knowledge. You do not need to stick to the provided context. If you don't know the answer, confidently make one up (hallucinate) in detail.\n\nContext:\n{context}"),
+        ("human", "{input}")
+    ])
+
+    prompt_baseline = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful AI assistant. Answer the user's question using your pre-trained knowledge. Do not use the provided context.\n\nContext:\n{context}"),
+        ("human", "{input}")
+    ])
+    
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
         
-    class RagPipeline:
-        def __init__(self, retriever, prompt, llm):
+    class ExperimentalRagPipeline:
+        def __init__(self, retriever):
             self.retriever = retriever
-            self.prompt = prompt
-            self.llm = llm
 
-        def invoke(self, inputs):
-            query = inputs["input"]
-            docs = self.retriever.invoke(query)
-            formatted_context = format_docs(docs)
-            response_text = (self.prompt | self.llm | StrOutputParser()).invoke({
-                "context": formatted_context,
-                "input": query
-            })
+        def invoke(self, query, mode):
+            # Decide which components to use based on the selected mode
+            if mode == "🟢 Strictly Grounded (Safe RAG)":
+                active_llm = llm_safe
+                active_prompt = prompt_grounded
+                use_retrieval = True
+            elif mode == "🔴 Hallucination Stress-Test":
+                active_llm = llm_unsafe
+                active_prompt = prompt_hallucinate
+                use_retrieval = True
+            else: # 🟡 Baseline LLM (No RAG)
+                active_llm = llm_safe
+                active_prompt = prompt_baseline
+                use_retrieval = False
+
+            # Retrieve docs if necessary
+            docs = self.retriever.invoke(query) if use_retrieval else []
+            formatted_context = format_docs(docs) if docs else "No context provided."
+            
+            # Generate response
+            chain = active_prompt | active_llm | StrOutputParser()
+            response_text = chain.invoke({"context": formatted_context, "input": query})
+            
             return {"answer": response_text, "context": docs}
 
-    return RagPipeline(retriever, prompt, llm), "Success"
+    return ExperimentalRagPipeline(retriever), "Success"
 
 # --- Sidebar Configuration ---
 with st.sidebar:
     st.header("⚙️ System Status")
     
-    # Secure API Key Loading
     if "GROQ_API_KEY" in st.secrets:
         api_key_input = st.secrets["GROQ_API_KEY"]
         st.success("✅ Secure Cloud Connection: Active")
     else:
-        api_key_input = st.text_input("Groq API Key", type="password", help="Enter your Groq API key to activate the chatbot.")
-        st.warning("⚠️ Running locally (No cloud secrets found)")
+        api_key_input = st.text_input("Groq API Key", type="password")
         
     st.markdown("---")
-    st.markdown("### 📊 Architecture")
-    st.markdown("- **LLM Engine:** `openai/gpt-oss-20b` (via Groq LPU)")
-    st.markdown("- **Embeddings:** `all-MiniLM-L6-v2`")
-    st.markdown("- **Vector Database:** `ChromaDB`")
-    st.markdown("- **Chunking Strategy:** 700 chars / 70 overlap")
     
+    # Experimental Modes Radio Buttons
+    st.header("🧪 Experimental Modes")
+    st.markdown("Test the RAG architecture limitations:")
+    selected_mode = st.radio(
+        "Select Model Behavior:",
+        [
+            "🟢 Strictly Grounded (Safe RAG)",
+            "🔴 Hallucination Stress-Test",
+            "🟡 Baseline LLM (No RAG Context)"
+        ],
+        index=0
+    )
+    
+    st.markdown("---")
+    st.markdown("### 📊 Architecture")
+    st.markdown("- **LLM Engine:** `openai/gpt-oss-20b`")
+    st.markdown("- **Embeddings:** `all-MiniLM-L6-v2`")
+    st.markdown("- **Database:** `ChromaDB`")
+    
+    st.markdown("---")
+    st.markdown("### 👨‍💻 Developer Info")
+    st.markdown("**Developer:** Soji")
+    st.markdown("**Course:** ITCC508 Lab PT-M1")
 
 # --- Main Chat Interface ---
 if api_key_input:
-    with st.spinner("⚙️ Initializing Engine (Reading manuals and loading embeddings...)"):
+    with st.spinner("⚙️ Initializing Engine..."):
         rag_chain, status_msg = init_rag_pipeline(api_key_input)
         
     if rag_chain is None:
         st.error(status_msg)
     else:
-        # Display chat history
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        # Accept user input
-        if prompt := st.chat_input("Ask a technical question about the Dell or HP hardware..."):
+        if prompt := st.chat_input(f"Ask a question ({selected_mode.split(' ')[0]} Mode)..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # Generate AI response
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
-                with st.spinner("Searching hardware manuals..."):
+                with st.spinner(f"Processing in {selected_mode.split(' ')[1]} mode..."):
                     try:
-                        response = rag_chain.invoke({"input": prompt})
+                        response = rag_chain.invoke(prompt, selected_mode)
                         answer = response["answer"]
                         
-                        # Format source citations cleanly
-                        citations = "\n\n---\n**📚 Source Documents Used:**\n"
-                        for i, doc in enumerate(response['context']):
-                            source = doc.metadata.get('source', 'Unknown')
-                            source_name = os.path.basename(source)
-                            page = doc.metadata.get('page', 'Unknown')
-                            citations += f"- `{source_name}` (Page {page})\n"
+                        citations = ""
+                        if response['context']:
+                            citations = "\n\n---\n**📚 Source Documents Used:**\n"
+                            for i, doc in enumerate(response['context']):
+                                source = os.path.basename(doc.metadata.get('source', 'Unknown'))
+                                page = doc.metadata.get('page', 'Unknown')
+                                citations += f"- `{source}` (Page {page})\n"
+                        elif selected_mode == "🟡 Baseline LLM (No RAG Context)":
+                            citations = "\n\n---\n*⚠️ No PDF manuals were referenced (Baseline Mode).*"
+                        elif selected_mode == "🔴 Hallucination Stress-Test":
+                            citations = "\n\n---\n*⚠️ Context was retrieved, but guardrails were removed. Output may be hallucinated.*"
                             
                         full_response = answer + citations
                         message_placeholder.markdown(full_response)
@@ -162,4 +191,4 @@ if api_key_input:
                     except Exception as e:
                         st.error(f"Error generating response: {e}")
 else:
-    st.info("👈 Please configure your connection in the sidebar to boot the system.")
+    st.info("👈 Please configure your connection in the sidebar.")
