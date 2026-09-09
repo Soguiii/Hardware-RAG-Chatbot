@@ -11,26 +11,41 @@ from langchain_core.output_parsers import StrOutputParser
 # --- UI Configuration ---
 st.set_page_config(
     page_title="IT Helpdesk | Hardware Support",
-    page_icon="🛠️",
+    page_icon="🖥️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS for a professional finish
+st.markdown("""
+<style>
+    /* Sleek top border accent */
+    .stApp > header {
+        border-top: 4px solid #1E3A8A;
+    }
+    /* Style the expander title */
+    .streamlit-expanderHeader {
+        font-weight: 600;
+        color: #1E3A8A;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Header Section ---
-st.title("🛠️ Enterprise IT Hardware Support")
+st.title("🖥️ Enterprise IT Hardware Support")
 st.markdown("**Domain-Specific RAG Chatbot | ITCC508 Lab Project**")
 
 with st.expander("ℹ️ About this Intelligent Assistant & Experimental Modes", expanded=False):
     st.markdown("""
     Welcome to the **IT Hardware Helpdesk**. This Retrieval-Augmented Generation (RAG) assistant helps technicians instantly locate technical specifications, diagnostic codes, and repair procedures.
     
-    **🧪 Experimental Modes (Use the Sidebar Sidebar to test):**
-    - **🟢 Strictly Grounded:** The standard RAG pipeline. It has `temperature=0` and a strict prompt. It will safely say "I cannot answer..." if you ask an off-topic question (Fallback Test).
+    **🧪 Experimental Modes (Use the Sidebar to test):**
+    - **🟢 Strictly Grounded:** The standard RAG pipeline. It has `temperature=0` and a strict prompt. It will safely say "I cannot answer..." if you ask an off-topic question.
     - **🔴 Hallucination Stress-Test:** Bypasses safety guardrails (`temperature=1.0` and no strict prompt). Try asking it for a sourdough recipe to see it hallucinate!
-    - **🟡 Baseline LLM:** Completely ignores the PDF manuals and acts like a standard ChatGPT, relying only on its pre-trained knowledge.
+    - **🟡 Baseline LLM:** Completely ignores the PDF manuals and acts like standard ChatGPT, relying only on its pre-trained knowledge.
     """)
 
-st.markdown("---")
+st.divider()
 
 # --- Initialize Session State ---
 if "messages" not in st.session_state:
@@ -58,11 +73,11 @@ def init_rag_pipeline(api_key):
     vectorstore = Chroma.from_documents(documents=documents, embedding=embeddings)
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
     
-    # 4. LLMs (Safe and Unsafe versions for experiments)
+    # 4. LLMs
     llm_safe = ChatGroq(model_name="openai/gpt-oss-20b", temperature=0)
     llm_unsafe = ChatGroq(model_name="openai/gpt-oss-20b", temperature=1.0)
     
-    # 5. Prompts for different modes
+    # 5. Prompts
     prompt_grounded = ChatPromptTemplate.from_messages([
         ("system", "You are a specialized enterprise IT hardware support assistant.\nAnswer questions strictly using ONLY the provided hardware manual context below.\nIf the answer cannot be found in the context, reply: 'I cannot answer based on the provided domain data.'\nProvide your answers in a clean, professional, and easy-to-read format.\n\nContext:\n{context}"),
         ("human", "{input}")
@@ -86,7 +101,6 @@ def init_rag_pipeline(api_key):
             self.retriever = retriever
 
         def invoke(self, query, mode):
-            # Decide which components to use based on the selected mode
             if mode == "🟢 Strictly Grounded (Safe RAG)":
                 active_llm = llm_safe
                 active_prompt = prompt_grounded
@@ -95,16 +109,14 @@ def init_rag_pipeline(api_key):
                 active_llm = llm_unsafe
                 active_prompt = prompt_hallucinate
                 use_retrieval = True
-            else: # 🟡 Baseline LLM (No RAG)
+            else:
                 active_llm = llm_safe
                 active_prompt = prompt_baseline
                 use_retrieval = False
 
-            # Retrieve docs if necessary
             docs = self.retriever.invoke(query) if use_retrieval else []
             formatted_context = format_docs(docs) if docs else "No context provided."
             
-            # Generate response
             chain = active_prompt | active_llm | StrOutputParser()
             response_text = chain.invoke({"context": formatted_context, "input": query})
             
@@ -122,13 +134,11 @@ with st.sidebar:
     else:
         api_key_input = st.text_input("Groq API Key", type="password")
         
-    st.markdown("---")
+    st.divider()
     
-    # Experimental Modes Radio Buttons
     st.header("🧪 Experimental Modes")
-    st.markdown("Test the RAG architecture limitations:")
     selected_mode = st.radio(
-        "Select Model Behavior:",
+        "Select AI Behavior:",
         [
             "🟢 Strictly Grounded (Safe RAG)",
             "🔴 Hallucination Stress-Test",
@@ -137,35 +147,43 @@ with st.sidebar:
         index=0
     )
     
-    st.markdown("---")
-    st.markdown("### 📊 Architecture")
-    st.markdown("- **LLM Engine:** `openai/gpt-oss-20b`")
-    st.markdown("- **Embeddings:** `all-MiniLM-L6-v2`")
-    st.markdown("- **Database:** `ChromaDB`")
+    st.divider()
     
-    st.markdown("---")
+    st.markdown("### 📊 Architecture Stack")
+    st.markdown("- **LLM Engine:** `gpt-oss-20b`")
+    st.markdown("- **Embeddings:** `all-MiniLM-L6-v2`")
+    st.markdown("- **Vector DB:** `ChromaDB`")
+    
+    st.divider()
+    
     st.markdown("### 👨‍💻 Developer Info")
     st.markdown("**Developer:** Soji")
     st.markdown("**Course:** ITCC508 Lab PT-M1")
 
 # --- Main Chat Interface ---
 if api_key_input:
-    with st.spinner("⚙️ Initializing Engine..."):
+    with st.spinner("⚙️ Initializing IT Support Engine..."):
         rag_chain, status_msg = init_rag_pipeline(api_key_input)
         
     if rag_chain is None:
         st.error(status_msg)
     else:
+        # Helper function to get the correct avatar
+        def get_avatar(role):
+            return "👤" if role == "user" else "🖥️"
+
+        # Display chat history
         for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
+            with st.chat_message(message["role"], avatar=get_avatar(message["role"])):
                 st.markdown(message["content"])
 
-        if prompt := st.chat_input(f"Ask a question ({selected_mode.split(' ')[0]} Mode)..."):
+        # Accept user input
+        if prompt := st.chat_input(f"Ask a hardware question ({selected_mode.split(' ')[0]} Mode)..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar="👤"):
                 st.markdown(prompt)
 
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar="🖥️"):
                 message_placeholder = st.empty()
                 with st.spinner(f"Processing in {selected_mode.split(' ')[1]} mode..."):
                     try:
