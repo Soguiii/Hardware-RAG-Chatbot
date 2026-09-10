@@ -21,12 +21,12 @@ st.markdown("""
 <style>
     /* Sleek top border accent */
     .stApp > header {
-        border-top: 4px solid #1E3A8A;
+        border-top: 4px solid #3B82F6;
     }
     /* Style the expander title */
     .streamlit-expanderHeader {
         font-weight: 600;
-        color: #1E3A8A;
+        color: #3B82F6;
     }
 </style>
 """, unsafe_allow_html=True)
