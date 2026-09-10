@@ -177,8 +177,20 @@ if api_key_input:
             with st.chat_message(message["role"], avatar=get_avatar(message["role"])):
                 st.markdown(message["content"])
 
+        # FAQ Quick Select Buttons (Only show when chat is empty)
+        faq_prompt = None
+        if len(st.session_state.messages) == 1:
+            st.markdown("<br><b>💡 Quick Queries:</b>", unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            if c1.button("🔄 How to clear CMOS?"): faq_prompt = "How do I clear the CMOS?"
+            if c2.button("🔊 What are the beep codes?"): faq_prompt = "What do 3 long beeps mean on the HP All-in-One?"
+            if c3.button("💾 Replace NVMe SSD?"): faq_prompt = "What are the exact steps to replace an M.2 NVMe SSD?"
+
         # Accept user input
-        if prompt := st.chat_input(f"Ask a hardware question ({selected_mode.split(' ')[0]} Mode)..."):
+        user_input = st.chat_input(f"Ask a hardware question ({selected_mode.split(' ')[0]} Mode)...")
+        prompt = user_input or faq_prompt
+
+        if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user", avatar="👤"):
                 st.markdown(prompt)
