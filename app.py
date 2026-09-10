@@ -157,7 +157,7 @@ with st.sidebar:
     st.divider()
     
     st.markdown("### 👨‍💻 Developer Info")
-    st.markdown("**Developer:** Soji")
+    st.markdown("**Developer:** John Loyd Arcilla")
     st.markdown("**Course:** ITCC508 Lab PT-M1")
 
 # --- Main Chat Interface ---
